@@ -37,6 +37,10 @@ or
 * * Click on the blue button **Create bucket**
 * * Enter the name and click on **Create**
 
+`
+Note: 这时候无需设置s3的任何权限，因为后面会提到。参战1: s3
+`
+
 * Create a **Lambda**
 * * Go to [Services -> Compute -> Lambda](https://console.aws.amazon.com/lambda/home)
 * * Click on the orange button **Create a function**
@@ -49,7 +53,29 @@ or
 * * * Name a new lambda
 * * * In **Runtime** select **Node.js 8.10**
 * * * Upload a _.zip_ file (download it from [releases](https://github.com/sagidM/s3-resizer/releases))
+
+`
+Note: 源码就1个文件，打包是把node_modules一起上传而已
+参战2,3: lambda + API Gateway
+API Gateway的目的就是为lambda添加一个开放的URL，暴露lambda为一个web服务
+`
+
 * * * > You'll also need to set up two **Environment variables**, with _BUCKET_ and _URL_ as keys. But in this time, you don't know about that _URL_. It is **endpoint** which you'll see below.
+
+`
+Note: lambda传递参数是通过环境变量的
+_BUCKET_ 提 s3的bucket
+_URL_ 这里应该改名为_S3_BUCKET_END_POINT_会好些。
+ 整体运作的秘诀就是： 访问s3:307跳转->api_gateway:301跳转(背后调用lambda)->再次访问s3:200。
+注意不是s3的文件的URL，而是s3当作web服务器时的URL（需配置，后面会提到）
+
+前者NG，如下格式，特点，文件不存在提示错误：
+https://s3-ap-northeast-1.amazonaws.com/_BUCKET_/logo.png
+后者OK，如下格式，特点，文件不存在，可以跳转（需配置，后面会提到）
+http://_BUCKET_.s3-website-ap-northeast-1.amazonaws.com/logo.png
+
+`
+
 * * * Choose role which has permission to put any object or create a new one. To do that
 * * * * choose **Create a custom role** in role's list. It should open a new page in your browser. On that page
 * * * * choose **Create a new IAM Role**
@@ -77,6 +103,10 @@ or
 }
 ```
 > Pay attention to `__BUCKET_NAME__`
+
+`
+Note: 权限1，让lambda能写入Bucket
+`
 
 * * * That page should closes after that action. So go on creating a lambda. And take a look at **Advanced settings**
 * * * * Allocate 768mb memory
@@ -107,6 +137,12 @@ or
     ]
 }
 ```
+
+`
+Note: 权限2，让所有人能读取Bucket
+`
+
+
 > Pay attention to `__BUCKET_NAME__`. By the way, you're able to open access not to whole bucket but to specific directory specifying it instead of __*__.
 * * Go to Properties (near to Permissions) -> Static website hosting -> Select **"Use this bucket to host a website"**
 * * In **Index document** paste any file, it'd be logical to name it _"index.html"_
@@ -127,13 +163,35 @@ or
   </RoutingRule>
 </RoutingRules>
 ```
+
+`
+Note:
+前面提到过的
+s3当作web服务器时的URL（需配置，此处才提到）
+`
+
+
 > Pay attention to `__DOMAIN__` and `__PATH_TO_LAMBDA__` (protocol is always _https_)  
 > For example, lambda's url is `https://some-id.execute-api.us-east-1.amazonaws.com/prod/your-lambdas-name`, the correct xml nodes must looks like  
 ```xml
 <HostName>some-id.execute-api.us-east-1.amazonaws.com</HostName>
 <ReplaceKeyPrefixWith>prod/your-lambdas-name?path=</ReplaceKeyPrefixWith>
 ```
+
+
 * * At this state, copy your **Endpoint** and click save
+
+`
+Note:
+前面提到过的
+_URL_ 这里应该改名为_S3_BUCKET_END_POINT_会好些。
+不然很容易和之前提过的api gateway 的endpoint混一起了。
+
+正确：s3文件夹当成web服务器时的EndPont
+错误：api gateway 的endpoint
+`
+
+
 * * Go to your lambda -> **Code** and set up these two **Environment variables** _(format: key=value)_  
 **BUCKET**=_your bucket's name_  
 **URL**=**Endpoint** you copied before  
