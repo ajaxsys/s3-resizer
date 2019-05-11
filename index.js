@@ -7,7 +7,7 @@ const Sharp = require('sharp');
 const PathPattern = new RegExp("(.*/)?(.*)/(.*)");
 
 // parameters
-const {BUCKET, URL} = process.env
+const {BUCKET_GET, BUCKET_PUT, URL} = process.env
 
 
 exports.handler = function(event, _context, callback) {
@@ -31,8 +31,10 @@ exports.handler = function(event, _context, callback) {
         return;
     }
 
+    console.log('1.Bucket get=', BUCKET_GET, ' key=', dir + filename)
+
     var contentType;
-    S3.getObject({Bucket: BUCKET, Key: dir + filename})
+    S3.getObject({Bucket: BUCKET_GET, Key: dir + filename})
         .promise()
         .then(data => {
             contentType = data.ContentType;
@@ -54,25 +56,30 @@ exports.handler = function(event, _context, callback) {
                 withoutEnlargement: true,
                 fit
             };
+
+            console.log('2.Resize width=', width, ' height=', height, ' fit=' , fit);
+
             return Sharp(data.Body)
                 .resize(width, height, options)
                 .rotate()
                 .toBuffer();
         })
-        .then(result =>
-            S3.putObject({
+        .then(result => {
+            console.log('3.Bucket put=', BUCKET_PUT, ' path=', path)
+            return S3.putObject({
                 Body: result,
-                Bucket: BUCKET,
+                Bucket: BUCKET_PUT,
                 ContentType: contentType,
                 Key: path
             }).promise()
-        )
-        .then(() =>
-            callback(null, {
+        })
+        .then(() => {
+            console.log('4.redirect 301 to=', `${URL}/${path}`)
+            return callback(null, {
                 statusCode: 301,
                 headers: {"Location" : `${URL}/${path}`}
             })
-        )
+        })
         .catch(e => {
             callback(null, {
                 statusCode: e.statusCode || 400,
