@@ -31,60 +31,89 @@ exports.handler = function(event, _context, callback) {
         return;
     }
 
-    console.log('1.Bucket get=', BUCKET_GET, ' key=', dir + filename)
-
-    var contentType;
-    S3.getObject({Bucket: BUCKET_GET, Key: dir + filename})
+    // validate if target file already existed
+    console.log('1.1 - Bucket put=', BUCKET_PUT, ' key=', path)
+    S3.headObject({Bucket: BUCKET_PUT, Key: path})
         .promise()
-        .then(data => {
-            contentType = data.ContentType;
-            var width = sizes[0] === 'AUTO' ? null : parseInt(sizes[0]);
-            var height = sizes[1] === 'AUTO' ? null : parseInt(sizes[1]);
-            var fit;
-            switch (action) {
-                case 'max':
-                    fit = 'inside';
-                    break;
-                case 'min':
-                    fit = 'outside';
-                    break
-                default:
-                    fit = 'cover';
-                    break;
+        .then(
+            () => {
+                // existed
+                console.log('1.1. already existed. Redirect 301 to=', `${URL}/${path}`)
+                return callback(null, {
+                    statusCode: 301,
+                    headers: {"Location" : `${URL}/${path}`}
+                });
             }
-            var options = {
-                withoutEnlargement: true,
-                fit
-            };
+        ).catch(
+            () => {
+                // not exist yet, do process
+                doImageResizeProcess();
+            }
+        );
 
-            console.log('2.Resize width=', width, ' height=', height, ' fit=' , fit);
+    function doImageResizeProcess() {
+        // Start process image resize
+        console.log('1.2 - Bucket get=', BUCKET_GET, ' key=', dir + filename)
+        var contentType;
+        S3.getObject({Bucket: BUCKET_GET, Key: dir + filename})
+            .promise()
+            .then(data => {
+                contentType = data.ContentType;
+                var width = sizes[0] === 'AUTO' ? null : parseInt(sizes[0]);
+                var height = sizes[1] === 'AUTO' ? null : parseInt(sizes[1]);
+                var fit;
+                switch (action) {
+                    case 'max':
+                        fit = 'inside';
+                        break;
+                    case 'min':
+                        fit = 'outside';
+                        break
+                    default:
+                        fit = 'cover';
+                        break;
+                }
+                var options = {
+                    withoutEnlargement: true,
+                    fit
+                };
 
-            return Sharp(data.Body)
-                .resize(width, height, options)
-                .rotate()
-                .toBuffer();
-        })
-        .then(result => {
-            console.log('3.Bucket put=', BUCKET_PUT, ' path=', path)
-            return S3.putObject({
-                Body: result,
-                Bucket: BUCKET_PUT,
-                ContentType: contentType,
-                Key: path
-            }).promise()
-        })
-        .then(() => {
-            console.log('4.redirect 301 to=', `${URL}/${path}`)
-            return callback(null, {
-                statusCode: 301,
-                headers: {"Location" : `${URL}/${path}`}
+                console.log('2.Resize width=', width, ' height=', height, ' fit=' , fit);
+
+                return Sharp(data.Body)
+                    .resize(width, height, options)
+                    .rotate()
+                    .toBuffer();
             })
-        })
-        .catch(e => {
-            callback(null, {
-                statusCode: e.statusCode || 400,
-                body: 'Exception: ' + e.message,
-                headers: {"Content-Type": "text/plain"}
+            .then(result => {
+                console.log('3.Bucket put=', BUCKET_PUT, ' path=', path)
+                return S3.putObject({
+                    Body: result,
+                    Bucket: BUCKET_PUT,
+                    ContentType: contentType,
+                    Key: path
+                }).promise()
             })
-        });
+            .then(() => {
+                console.log('4.redirect 301 to=', `${URL}/${path}`)
+                return callback(null, {
+                    statusCode: 301,
+                    headers: {"Location" : `${URL}/${path}`}
+                })
+            })
+            .catch(e => {
+                if (e.message === 'NeverProcessTwice') {
+                    console.log('9.redirect 301 to=', `${URL}/${path}`)
+                    return callback(null, {
+                        statusCode: 301,
+                        headers: {"Location" : `${URL}/${path}`}
+                    })
+                }
+                return callback(null, {
+                    statusCode: e.statusCode || 400,
+                    body: 'Exception: ' + e.message,
+                    headers: {"Content-Type": "text/plain"}
+                })
+            });
+    }
 }
